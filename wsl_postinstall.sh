@@ -41,13 +41,49 @@ echo ""
 echo "🔐 Let's configure your Git credentials (Personal Access Token)"
 echo "💡 GitHub: https://github.com/settings/tokens"
 echo "💡 GitLab: https://gitlab.com/-/profile/personal_access_tokens"
-echo "✅ Recommended scopes: 'repo' and 'write:packages' or similar"
+echo "✅ Recommended scopes:"
+echo "   - GitHub: 'repo', 'read:org'"
+echo "   - GitLab: 'api', 'read_repository', 'write_repository'"
 echo ""
 
-read -rp "Enter your Git server (e.g. github.com or git.mycompany.com): " GIT_HOST
+read -rp "Enter your Git server (e.g. github.com or gitlab.com): " GIT_HOST
 read -rp "Enter your Git username: " GIT_USER
 read -rsp "Enter your Git Personal Access Token: " GIT_TOKEN
 echo ""
+
+# === Token verification ===
+verify_token() {
+  echo "🔍 Verifying token with $1..."
+
+  if [[ "$1" == *"github.com"* ]]; then
+    RESPONSE=$(curl -s -i -H "Authorization: token $GIT_TOKEN" https://api.github.com/user)
+    if echo "$RESPONSE" | grep -q "200 OK"; then
+      SCOPES=$(echo "$RESPONSE" | grep "X-OAuth-Scopes")
+      echo "✅ GitHub token is valid."
+      echo "🔎 Scopes: $SCOPES"
+      if [[ "$SCOPES" != *"repo"* ]]; then
+        echo "⚠️  'repo' scope missing — may not be able to access private repos."
+      fi
+    else
+      echo "❌ Invalid GitHub token. Exiting."
+      exit 1
+    fi
+
+  elif [[ "$1" == *"gitlab.com"* ]] || [[ "$1" == *"."* ]]; then
+    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --header "PRIVATE-TOKEN: $GIT_TOKEN" "https://$1/api/v4/user")
+    if [[ "$RESPONSE" == "200" ]]; then
+      echo "✅ GitLab token is valid."
+      echo "⚠️  GitLab does not expose scopes. Make sure it includes 'api' or repo access."
+    else
+      echo "❌ Invalid GitLab token or host unreachable. Exiting."
+      exit 1
+    fi
+  else
+    echo "❓ Unknown Git host type. Cannot verify."
+  fi
+}
+
+verify_token "$GIT_HOST"
 
 # Configure Git
 CRED_HELPER=$(git config --global credential.helper || echo "")
